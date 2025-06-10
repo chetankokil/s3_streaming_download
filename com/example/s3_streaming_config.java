@@ -1,3 +1,5 @@
+package com.example;
+
 // S3Configuration.java
 @Configuration
 @EnableConfigurationProperties({S3Properties.class, NasProperties.class})
