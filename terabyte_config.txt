@@ -1,0 +1,141 @@
+# application.yml - Optimized for 1TB downloads
+server:
+  tomcat:
+    connection-timeout: 21600000  # 6 hours
+    keep-alive-timeout: 3600000   # 1 hour
+    max-connections: 200
+    accept-count: 100
+    threads:
+      min-spare: 10
+      max: 50
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: terabyte-downloader
+  servlet:
+    multipart:
+      max-file-size: 1TB
+      max-request-size: 1TB
+  mvc:
+    async:
+      request-timeout: 21600000   # 6 hours
+  task:
+    execution:
+      pool:
+        core-size: 5
+        max-size: 20
+        queue-capacity: 50
+        keep-alive: 3600s
+    scheduling:
+      pool:
+        size: 5
+
+# AWS S3 Configuration
+aws:
+  s3:
+    bucket-name: ${AWS_S3_BUCKET:your-bucket-name}
+    region: ${AWS_REGION:us-east-1}
+    buffer-size: 1048576        # 1MB buffer
+    chunk-size: 104857600       # 100MB chunks for parallel download
+    max-retries: 5
+    use-transfer-acceleration: true
+
+# NAS Configuration
+nas:
+  base-path: ${NAS_BASE_PATH:/mnt/nas/downloads}
+  temp-path: ${NAS_TEMP_PATH:/mnt/nas/temp}
+  io-threads: 4
+  validate-checksum: true
+  progress-report-interval: 1073741824  # Report every 1GB
+
+# Logging Configuration
+logging:
+  level:
+    com.yourcompany.terabyte: DEBUG
+    software.amazon.awssdk: WARN
+    org.springframework.web: INFO
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/terabyte-downloader.log
+    max-size: 100MB
+    max-history: 30
+
+# Management and Monitoring
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+---
+# Docker Compose for NAS setup
+version: '3.8'
+
+services:
+  terabyte-downloader:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - /mnt/nas:/mnt/nas  # Mount your NAS
+      - ./logs:/app/logs
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET}
+      - AWS_REGION=${AWS_REGION}
+      - NAS_BASE_PATH=/mnt/nas/downloads
+      - NAS_TEMP_PATH=/mnt/nas/temp
+      - JAVA_OPTS=-Xmx8g -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Optional: Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+
+---
+# JVM Configuration for large file processing
+# Set these as environment variables or in application.yml
+
+# JVM Memory Settings (adjust based on your system)
+JAVA_OPTS: >
+  -Xmx8g
+  -Xms4g
+  -XX:+UseG1GC
+  -XX:MaxGCPauseMillis=200
+  -XX:+UseStringDeduplication
+  -XX:+OptimizeStringConcat
+  -Dfile.encoding=UTF-8
+  -Djava.net.preferIPv4Stack=true
+  -Djava.security.egd=file:/dev/./urandom
+
+# Network Buffer Settings
+NETWORK_OPTS: >
+  -Djava.net.useSystemProxies=true
+  -Dnetworkaddress.cache.ttl=60
+  -Dsun.net.useExclusiveBind=false
