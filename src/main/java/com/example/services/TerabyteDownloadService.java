@@ -1,4 +1,26 @@
-// TerabyteDownloadService.java
+package com.example.services;
+
+import com.example.models.DownloadResult;
+import com.example.models.NasProperties;
+import com.example.models.S3Properties;
+import com.example.utils.ProgressTracker;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.task.AsyncTaskExecutor;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Service;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
+import java.nio.channels.ReadableByteChannel;
+import java.nio.file.*;
+import java.util.concurrent.CompletableFuture;
+
 @Service
 @Slf4j
 public class TerabyteDownloadService {
@@ -23,8 +45,8 @@ public class TerabyteDownloadService {
     public CompletableFuture<DownloadResult> downloadToNas(String s3Key, String nasFileName, String downloadId) {
         log.info("Starting TB download: {} -> {}", s3Key, nasFileName);
         
-        Path tempFile = Paths.get(nasProperties.getTempPath(), nasFileName + ".tmp");
-        Path finalFile = Paths.get(nasProperties.getBasePath(), nasFileName);
+        Path tempFile = Paths.get(nasProperties.tempPath(), nasFileName + ".tmp");
+        Path finalFile = Paths.get(nasProperties.basePath(), nasFileName);
         
         try {
             // Get file metadata
@@ -41,9 +63,9 @@ public class TerabyteDownloadService {
             // Download in chunks with parallel processing
             DownloadResult result = downloadInChunks(s3Key, tempFile, totalSize, downloadId);
             
-            if (result.isSuccess()) {
+            if (result.success()) {
                 // Validate and move to final location
-                if (nasProperties.isValidateChecksum()) {
+                if (nasProperties.validateChecksum()) {
                     validateFileIntegrity(tempFile, metadata.eTag(), downloadId);
                 }
                 
@@ -56,7 +78,7 @@ public class TerabyteDownloadService {
             } else {
                 // Cleanup on failure
                 Files.deleteIfExists(tempFile);
-                progressTracker.failDownload(downloadId, result.getErrorMessage());
+                progressTracker.failDownload(downloadId, result.errorMessage());
                 return CompletableFuture.completedFuture(result);
             }
             
@@ -80,7 +102,7 @@ public class TerabyteDownloadService {
         try (FileChannel fileChannel = FileChannel.open(outputFile, 
                 StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
             
-            long chunkSize = s3Properties.getChunkSize();
+            long chunkSize = s3Properties.chunkSize();
             long position = 0;
             int chunkIndex = 0;
             
@@ -101,7 +123,7 @@ public class TerabyteDownloadService {
                 progressTracker.updateProgress(downloadId, position);
                 
                 // Log progress every GB
-                if (position % nasProperties.getProgressReportInterval() == 0 || position >= totalSize) {
+                if (position % nasProperties.progressReportInterval() == 0 || position >= totalSize) {
                     double progressPercent = (double) position / totalSize * 100;
                     log.info("Download progress: {:.2f}% ({} GB / {} GB)", 
                            progressPercent, position / (1024*1024*1024), totalSize / (1024*1024*1024));
@@ -120,7 +142,7 @@ public class TerabyteDownloadService {
                                          long startByte, long endByte, int chunkIndex, String downloadId) {
         int retryCount = 0;
         
-        while (retryCount < s3Properties.getMaxRetries()) {
+        while (retryCount < s3Properties.maxRetries()) {
             try {
                 downloadSingleChunk(s3Key, fileChannel, startByte, endByte, chunkIndex);
                 return true;
@@ -129,7 +151,7 @@ public class TerabyteDownloadService {
                 retryCount++;
                 log.warn("Chunk {} download attempt {} failed: {}", chunkIndex, retryCount, e.getMessage());
                 
-                if (retryCount < s3Properties.getMaxRetries()) {
+                if (retryCount < s3Properties.maxRetries()) {
                     try {
                         // Exponential backoff
                         Thread.sleep(1000 * (1L << Math.min(retryCount, 6)));
@@ -138,7 +160,7 @@ public class TerabyteDownloadService {
                         return false;
                     }
                 } else {
-                    log.error("Chunk {} failed after {} retries", chunkIndex, s3Properties.getMaxRetries());
+                    log.error("Chunk {} failed after {} retries", chunkIndex, s3Properties.maxRetries());
                 }
             }
         }
@@ -150,7 +172,7 @@ public class TerabyteDownloadService {
                                    long startByte, long endByte, int chunkIndex) throws IOException {
         
         GetObjectRequest request = GetObjectRequest.builder()
-                .bucket(s3Properties.getBucketName())
+                .bucket(s3Properties.bucketName())
                 .key(s3Key)
                 .range("bytes=" + startByte + "-" + endByte)
                 .build();
@@ -190,7 +212,7 @@ public class TerabyteDownloadService {
 
     private HeadObjectResponse getObjectMetadata(String key) {
         HeadObjectRequest request = HeadObjectRequest.builder()
-                .bucket(s3Properties.getBucketName())
+                .bucket(s3Properties.bucketName())
                 .key(key)
                 .build();
         

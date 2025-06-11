@@ -1,3 +1,17 @@
+package com.example.controllers;
+
+import com.example.models.DownloadProgress;
+import com.example.models.DownloadRequest;
+import com.example.services.TerabyteDownloadService;
+import com.example.utils.ProgressTracker;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
 // TerabyteDownloadController.java
 @RestController
 @RequestMapping("/api/terabyte")
@@ -18,10 +32,10 @@ public class TerabyteDownloadController {
         String downloadId = UUID.randomUUID().toString();
         
         log.info("Starting terabyte download: {} -> {} (ID: {})", 
-                request.getS3Key(), request.getNasFileName(), downloadId);
+                request.s3Key(), request.nasFileName(), downloadId);
         
         // Start async download
-        downloadService.downloadToNas(request.getS3Key(), request.getNasFileName(), downloadId);
+        downloadService.downloadToNas(request.s3Key(), request.nasFileName(), downloadId);
         
         Map<String, String> response = new HashMap<>();
         response.put("downloadId", downloadId);

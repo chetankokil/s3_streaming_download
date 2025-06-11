@@ -5,7 +5,15 @@
          http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>com.example</groupId>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.2</version>
+        <relativePath/>
+    </parent>
+
+
+    <groupId>com.example</groupId>
   <artifactId>s3_streaming_example</artifactId>
   <version>1.0-SNAPSHOT</version>
   <packaging>jar</packaging>
@@ -16,6 +24,9 @@
     <kafka.version>3.5.1</kafka.version>
     <slf4j.version>2.0.7</slf4j.version>
   </properties>
+
+  <!-- import spring boot parent bom here -->
+
 
   <dependencies>
     <!-- Spring Boot Starter Web -->
